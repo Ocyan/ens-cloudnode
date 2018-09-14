@@ -1,0 +1,50 @@
+image: docker:dind
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+
+variables:
+  # CI_DEBUG_TRACE: "true"
+  DOCKER_DRIVER: overlay
+  DOCKER_HOST: tcp://docker:2375
+  IMAGE_TAG: $CI_PROJECT_NAME:$CI_COMMIT_SHA
+  LATEST_IMAGE: $CI_PROJECT_NAME:latest
+
+build:
+  stage: build
+  tags:
+    - docker
+  script:
+    - uname -a
+    - env
+    - docker info
+    - docker version
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - set +e && docker pull $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$LATEST_IMAGE && set -e
+    - docker build -f Dockerfile --cache-from $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$LATEST_IMAGE -t $IMAGE_TAG .
+    - docker tag $IMAGE_TAG $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$IMAGE_TAG
+    - docker tag $IMAGE_TAG $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$LATEST_IMAGE
+    - docker push $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$IMAGE_TAG
+    - docker push $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$LATEST_IMAGE
+
+test:
+  stage: test
+  image: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/$IMAGE_TAG
+  services:
+    - docker:dind
+  tags:
+    - docker
+  script:
+    - cd /usr/src/app
+    - ganache-cli -s
+      -p 8545 -h 0.0.0.0
+      --networkId 1234
+      --db /etc/ganache-cli/testrpc.db
+      --account="0x351494a5ae8f9b70a2a2fd482146ab4578f61d4d796685c597ec6683635a940e, 100000000000000000000"
+      --account="0x4cd491f96e6623edb52719a8d4d1110a87d8d83e3fa86f8e14007cb3831c0a2b, 100000000000000000000"
+      --account="0xef40e0d6ada046010b6965d73603cabae1a119ca804f5d9e9a9ce866b0bea7d, 100000000000000000000" &
+      yarn run test
